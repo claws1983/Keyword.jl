@@ -92,10 +92,10 @@ end
 ```
 
 ## Allowing Other Keys
-The special symbol "_" absorbs other keys and spreads them into other functions (including those which do not allow other keys)"
-_ should always be a the end of a function call.
+The special symbol `_` absorbs other keys and spreads them into other functions (including those which do not allow other keys).
+`_` should always be a the end of a function call.
 
-At run them, the _ will be bound to "dots" object.
+At run time, `_` will be bound to a dots object which will contain the other values.
 The dots object is not created by the user.
 
 It is considered bad form to use the dots object directly.
@@ -137,9 +137,9 @@ end
 ##{zz=>nothing,_=>[y=>2],qq=>"Default Basic qq",xx=>"Default xx",Foo=>{x=>"Default x",y=>2,z=>nothing}}
 
 @KC Bar(ww=>"A")
-in basic Bar
-in basic Foo
-{zz=>nothing,_=>[ww=>"A"],qq=>"Default Basic qq",xx=>"Default xx",Foo=>{x=>"Default x",y=>"Default y",z=>nothing}}
+##in basic Bar
+##in basic Foo
+##{zz=>nothing,_=>[ww=>"A"],qq=>"Default Basic qq",xx=>"Default xx",Foo=>{x=>"Default x",y=>"Default y",z=>nothing}}
 
 ##Extra arguments can be type checked.
 @KC Bar(xx=>1,ww=>"A")
@@ -152,9 +152,9 @@ This shows how one can use the `dic_call` function.
 
 ```julia
 dict_call(Bar, {:x=>2})
-in basic Bar
-in special  Foo
-{zz=>nothing,_=>[x=>2],qq=>"Default Basic qq",xx=>"Default xx",Foo=>{x=>2,y=>"Default y",z=>nothing}}
+##in basic Bar
+##in special  Foo
+##{zz=>nothing,_=>[x=>2],qq=>"Default Basic qq",xx=>"Default xx",Foo=>{x=>2,y=>"Default y",z=>nothing}}
 ```
 
 Here are some basic examples of how Keyword is able to "outsmart" the user.
