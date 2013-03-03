@@ -300,6 +300,23 @@ C.f()
 ##pull y
 ##pull w
 ##(nothing,nothing,nothing)
+```
+
+##A Look at the `@KC` and `@KC!` macros.
+`@KC` stands for Keyed Call
+
+```julia
+macroexpand(:(@KC Foo()))
+##:(if (0x229efd7230f54830$(Keyword).==$(Keyword).object_id(Foo))
+##        Foo("Default x","Default y",missing)
+##    else 
+##        $(Keyword).warn("slow call. Foo changed.")
+##        $(Keyword).tuple_call($(Keyword).object_id(Foo))
+##    end)
+
+macroexpand(:(@KC! Foo()))
+##:(Foo("Default x","Default y",missing))
 
 ```
+
 
