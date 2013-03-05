@@ -114,16 +114,17 @@ end
 type Arg_Num
     num::Int
 end
+const ConstLang = Union(Number, ASCIIString)
 
-##TODO: specify types
-type Gen_Info
-    id##typeof(object_id(+))
-    obj::Function
-    sym::Symbol
-    defaults::Array
-    allow_other_keys::Bool
-    raw_call::Function
-end
+
+eval(quote
+    type Gen_Info
+        id::($(typeof(object_id(+))))
+        sym::Symbol
+        defaults::Array
+        allow_other_keys::Bool
+    end
+end)
 
 registered_generics_obj_expr = quote
     ($(typeof(object_id(+)))=>Gen_Info)[]
@@ -131,21 +132,24 @@ end
 
 const registered_generics_obj = eval(registered_generics_obj_expr)
 
-function tuple_call(fn_id, args...)
+function tuple_call(fn::Function, args...)
     d = (Symbol=>Any)[]
     for (k,v) in args
         d[k] = v
     end
-    dict_call(fn_id, d)
+    dict_call(fn, d)
 end
+
+delete_registered_generic(fn::Function) = delete!(registered_generics_obj, object_id(fn))
 
 
 ##This the main entry to the dynamic calling facility.
 ##The function ensures that dict contains and only contains formal arguments for fn.
 ##All other arguments are put in the the dots object if applicable.
 ##If the function allows_other_keys, we ensure that the dict contains a valid dots object keyed by _dots_sym.
-function dict_call(fn_id, dict::Dict{Symbol,Any})
+function dict_call(fn::Function, dict::Dict{Symbol,Any})
     dict = copy(dict)
+    fn_id = object_id(fn)
     info = registered_generics_obj[fn_id]
     defaults = info.defaults
     defaults_m = args_to_map(info.defaults)
@@ -170,15 +174,25 @@ function dict_call(fn_id, dict::Dict{Symbol,Any})
     else
         delete!(extra_args, _dots_sym)
         delete!(dict, _dots_sym)
-        ## if length(extra_args) != 0
-        ##     error("unsupported arg in $dict")
-        ## end
+        if length(extra_args) != 0
+             error("unsupported arg to $fn in $dict")
+        end
     end
-    
-    (info.raw_call)(dict)
+    args = {}
+    for i in 1:length(defaults)
+        (k,v) = defaults[i]
+        push!(args, 
+              @get(dict,
+                   k,
+                   isa(v,ConstLang) ? v : fn(Arg_Num(i))))
+              
+            
+    end
+
+    fn(args...)
 end
 
-function dict_call(fn_id, dict::Dict)
+function dict_call(fn::Function, dict::Dict)
     dnew = (Symbol=>Any)[]
     for (k,v) in dict
         if !isa(k, Symbol)
@@ -186,18 +200,18 @@ function dict_call(fn_id, dict::Dict)
         end
         dnew[k] = v
     end
-    dict_call(fn_id, dnew)
+    dict_call(fn, dnew)
 end
 
-function dict_call(fn::Function, dict::Dict{Symbol,Any})
-    fn_id = object_id(fn)
-    if has(dict, _dots_sym)
-        error("cannot dict_call a function if the dict contains $_dots_sym\n")
-    end
-    dict_call(fn_id, dict)
-end
+## function dict_call(fn::Function, dict::Dict{Symbol,Any})
+##     fn_id = object_id(fn)
+##     if has(dict, _dots_sym)
+##         error("cannot dict_call a function if the dict contains $_dots_sym\n")
+##     end
+##     dict_call(fn_id, dict)
+##end
 
-dict_call(fn::Function, dict::Dict) = dict_call(object_id(fn), dict)
+##dict_call(fn::Function, dict::Dict) = dict_call(object_id(fn), dict)
 dict_call(fn::Function) = dict_call(fn, (Symbol=>Any)[])  
 
 
@@ -217,17 +231,6 @@ function get_val_expr(key, explicit, defaults, using_dots)
     end
 end
 
-
-function set_extra_expr(key, defaults)
-    default = defaults[key]
-    yes = expr(:block,
-               expr(:local,
-                    set_expr(key, :($(_dots_sym).map[$key]))))
-    no = expr(:block,
-              expr(:local,
-                   set_expr(key, default)))
-    expr(:if, :(has($(_dots_sym).map, $key)), yes, no)
-end
 
 
 
@@ -272,9 +275,6 @@ args_to_map(args::Expr) = args_to_map(args_to_vector(args))
 
 
 
-##TODO: Default formal arguments can escape scope.
-## Maybe we can wrap them in a closure?
-## Perhaps the function itself -- dispatching on a special type?
 macro def_generic(x)    
     name_uq = x.args[1]
     name = quot(x.args[1])
@@ -302,14 +302,7 @@ macro def_generic(x)
         end
     end
    arg_num_sym = esc(gensym("num"))    
-   raw_call_args = {
-                    if k == _dots_sym
-                        _dots_sym
-                    else
-                        :(@get(dict, $(quot(k)), $(esc(v))))
-                    end
-                    for (k,v) in args}
-
+  
                    
   closure={}
   for i in 1:length(args)
@@ -325,25 +318,7 @@ macro def_generic(x)
   reverse!(closure)
 
                         
-     
-   if allow_other_keys
-       raw_call_exp = quote
-           let $_dots_sym = dots_copy(get(dict,
-                                          $(quot(_dots_sym)),
-                                          dots()))
-               $(expr(:call, :fn, raw_call_args...))
-           end
-       end
-   else
-       raw_call_exp = quote
-           if has(dict, $(quot(_dots_sym)))
-               ierror("raw_call gave extra args."*
-                      $("but $name_uq does not accept these"))
-           end
-           $(expr(:call, :fn, raw_call_args...))
-       end
-   end
-                        
+      
 
     quote
         function $(esc(name_uq)) ()
@@ -360,17 +335,14 @@ macro def_generic(x)
             $(expr(:block, closure...))
             error("can't go that high")
         end
-
-         
+ 
         registered_generics_obj[object_id($(esc(name_uq)))] =
         Gen_Info(object_id($(esc(name_uq))),
-                 $(esc(name_uq)),
                  $(esc(name)),
                  $(expr(:cell1d, args_...)),
-                 $allow_other_keys,
-                 let fn = $(esc(name_uq))
-                     (dict)->$(raw_call_exp)
-                 end)             
+                 $allow_other_keys)
+
+        finalizer($(esc(name_uq)), delete_registered_generic)
         $(quot(x))
     end
 end
@@ -474,7 +446,7 @@ macro def_method(x)
 
 end
 
-const ConstLang = Union(Number, ASCIIString)
+
 close_over(fn_name, arg_num, default::ConstLang) = default
 function close_over(fn_name, arg_num, default)
     expr(:call, fn_name, :(Arg_Num($arg_num)))
@@ -593,7 +565,7 @@ macro KC(x)
                    esc(v)
                end)
           for (k,v) in args_to_vector(x.args[2:])}
-    no = expr(:call, :tuple_call, :(object_id($ename)),
+    no = expr(:call, :tuple_call, ename,
               no...)
     if using_dots
         no = :(let $(_dots_sym) = dots_copy($(esc(_dots_sym)))
