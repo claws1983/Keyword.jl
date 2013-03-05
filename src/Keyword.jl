@@ -24,6 +24,8 @@ export @def_generic, @def_method, @KC, @KC!, dict_call, dots_to_dict, missing, k
 export @dots_get, @get
 
 
+
+
 quot(ex) = expr(:quote, ex)
 set_expr(lhs, rhs) = expr(symbol("="), lhs, rhs)
 arrow_exp(lhs, rhs) = expr(symbol("=>"), lhs, rhs)
@@ -44,6 +46,7 @@ macro get(dict,key,default)
 end
 
 const missing = nothing
+esc(x) = x == :missing ? x : Base.esc(x)
 const _dots_sym = :_
 global eval_for_object_id = Main.eval
 keyword_init(m::Module) = global eval_for_object_id = m.eval
@@ -107,6 +110,10 @@ macro dots_get(dict,key,default,delete)
     end
 end
 
+
+type Arg_Num
+    num::Int
+end
 
 ##TODO: specify types
 type Gen_Info
@@ -193,14 +200,20 @@ end
 dict_call(fn::Function, dict::Dict) = dict_call(object_id(fn), dict)
 dict_call(fn::Function) = dict_call(fn, (Symbol=>Any)[])  
 
+
+
+
 function get_val_expr(key, explicit, defaults, using_dots)
     if has(explicit, key)
         esc(explicit[key])
     elseif !using_dots
         ##TODO: add meaningful error message
-        esc(defaults[key])
+        (defaults[key])
     elseif has(defaults, key)
-        :(@dots_get($(_dots_sym),$(quot(key)),$(esc(defaults[key])),true))
+        :(@dots_get($(_dots_sym),
+                    $(quot(key)),
+                    $((defaults[key])),
+                    true))
     end
 end
 
@@ -275,7 +288,7 @@ macro def_generic(x)
             ierror("generic declarations cannot specify type")
         end
     end
-
+        
     if length(args) > 1
         for i in 1:(length(args)-1)
             if args[i][1] == _dots_sym
@@ -288,7 +301,7 @@ macro def_generic(x)
             ierror("found non unique key")
         end
     end
-
+   arg_num_sym = esc(gensym("num"))    
    raw_call_args = {
                     if k == _dots_sym
                         _dots_sym
@@ -297,6 +310,22 @@ macro def_generic(x)
                     end
                     for (k,v) in args}
 
+                   
+  closure={}
+  for i in 1:length(args)
+      push!(closure,
+            quote
+                if  num == $i
+                    return $(esc(args[i][2]))
+                end
+            end)
+      
+  end
+  push!(closure, :(num = ($arg_num_sym).num))
+  reverse!(closure)
+
+                        
+     
    if allow_other_keys
        raw_call_exp = quote
            let $_dots_sym = dots_copy(get(dict,
@@ -326,7 +355,13 @@ macro def_generic(x)
                  "This can cause unexpected results.\n"*
                  "Consider recompiling.")
         end
-        
+
+        function $(esc(name_uq)) ($(arg_num_sym)::Arg_Num)
+            $(expr(:block, closure...))
+            error("can't go that high")
+        end
+
+         
         registered_generics_obj[object_id($(esc(name_uq)))] =
         Gen_Info(object_id($(esc(name_uq))),
                  $(esc(name_uq)),
@@ -339,6 +374,7 @@ macro def_generic(x)
         $(quot(x))
     end
 end
+
 
 
 ##TODO: Perform an escape analysis.
@@ -408,21 +444,19 @@ macro def_method(x)
             x
         end
        
-        setting_form = expr(:block,
-                            
-                            [
-        let
-        ek = esc(k)
-        ek_ = esc(drop_type(k))
-        qk_ = quot(drop_type(k))
-        
-        :(local $k = @dots_get($_dots_sym,
-                                  $qk_,
-                                  $v,
-                                  true))
-        end
-        
-    for (k,v) in extra_args]...)
+        setting_form = [
+                        let
+                        ek = esc(k)
+                        ek_ = esc(drop_type(k))
+                        qk_ = quot(drop_type(k))
+                        
+                        :($k = @dots_get($_dots_sym,
+                                         $qk_,
+                                         $v,
+                                         true))
+                        end
+                        
+                        for (k,v) in extra_args]
                              
                             
                             
@@ -433,13 +467,18 @@ macro def_method(x)
             end
             
             $(expr(:function, esc(call_form),
-                   esc(expr(:block,
-                            setting_form,
-                            body.args...))))
+                   esc(expr(:let, 
+                            body,
+                            setting_form...))))
         end
 
 end
 
+const ConstLang = Union(Number, ASCIIString)
+close_over(fn_name, arg_num, default::ConstLang) = default
+function close_over(fn_name, arg_num, default)
+    expr(:call, fn_name, :(Arg_Num($arg_num)))
+end
 
 
 
@@ -451,6 +490,11 @@ function expand_key_call(x)
     ename = esc(name)
     info = registered_generics_obj[eval_for_object_id(:(object_id($name)))]
     defaults = info.defaults
+
+    for i in 1:length(defaults)
+        defaults[i][2] = close_over(ename,i, defaults[i][2])
+    end
+    
     defaults_m = args_to_map(defaults)
     allow_other_keys = info.allow_other_keys
     if allow_other_keys
