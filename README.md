@@ -178,6 +178,9 @@ bar_or_foo = Foo
 Arguments with a trailing `!` (but no default), flag an error if
 they are not supplied with a value at runtime.
 
+Note that only `@def_generic` gets the `!`.
+The `!` is omitted everywhere else.
+
 ```julia
 @def_generic Qux(x!,y)
 ##:(Qux(x!,y))
