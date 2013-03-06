@@ -278,7 +278,20 @@ args_to_map(args::Expr) = args_to_map(args_to_vector(args))
 macro def_generic(x)    
     name_uq = x.args[1]
     name = quot(x.args[1])
-    args = args_to_vector(x.args[2:])
+
+    ##naked symbols with a trailing '!' are treated special
+    ##They, by default, flag an error.
+    
+    args= {
+           if (isa(y, Symbol) && string(y)[end] == '!')
+               k = symbol(string(y)[1:(end-1)])
+               arrow_exp(k,
+                         :(($Keyword).error($"You must supply a value for $k")))
+           else
+               y
+           end
+           for y in x.args[2:]}
+    args = args_to_vector(args)
     args_m = args_to_map(args)
     args_ = {expr(:cell1d, quot(y[1]), quot(y[2])) for y in args}
     allow_other_keys = args[end][1] == _dots_sym
@@ -317,8 +330,6 @@ macro def_generic(x)
   push!(closure, :(num = ($arg_num_sym).num))
   reverse!(closure)
 
-                        
-      
 
     quote
         function $(esc(name_uq)) ()
