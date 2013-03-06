@@ -42,7 +42,8 @@ end
                          ww::Int=>1,
                          _)
     println("in special Bar")
-    {:xx=>xx, :zz=>zz, :qq=>qq, :ww=>ww, :_=>dots_to_dict(_), :Foo=>(@KC Foo(_))}
+    {:xx=>xx, :zz=>zz, :qq=>qq, :ww=>ww, :_=>dots_to_dict(_),
+    :Foo=>(@KC Foo(x=>"x for foo from bar", _))}
 end
 
 @KC Bar()
@@ -52,6 +53,33 @@ end
 
 ##error
 ##@KC Bar(xx=>1,ww=>"A")
+
+
+
+##Required Arguments
+
+##Arguments with a trailing `!` (but no default), flag an error if
+##they are not supplied with a value at runtime.
+
+
+
+@def_generic Qux(x!,y)
+@def_method function Qux(x,y)
+   (x,y)
+end
+
+@KC Qux()
+##Error
+##@KC Qux(x=>2)
+
+##Note the space between x! and =>.
+##This is required by julia to distinguish it from !=.
+@def_generic Quux(x! =>3,y)
+@def_method function Quux(x!,y)
+   (x!,y)
+end
+@KC Quux()
+@KC Quux(x! =>2)
 
 
 ##Dynamic

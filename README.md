@@ -57,7 +57,6 @@ This is done with the `@KC!` macro. But this can have unexpected results if you 
 Using the `_` symbol requires extra (run-time) overhead.
 
 ##TODOs
-+ There is a slight scoping issue with default (formal) arguments. See below.
 + Add test cases.
 + Improve error messages.
 + Clean up the code.
@@ -118,7 +117,8 @@ end
                          ww::Int=>1,
                          _)
     println("in special Bar")
-    {:xx=>xx, :zz=>zz, :qq=>qq, :ww=>ww, :_=>dots_to_dict(_), :Foo=>(@KC Foo(_))}
+    {:xx=>xx, :zz=>zz, :qq=>qq, :ww=>ww, :_=>dots_to_dict(_), 
+     :Foo=>(@KC Foo(x=>"x:Bar->Foo",_))}
 end
 
 @KC Bar()
@@ -129,7 +129,7 @@ end
 @KC Bar(z=>2,xx=>1)
 ##in special Bar
 ##in basic Foo
-##{zz=>nothing,_=>[z=>2],qq=>"Default Special q",ww=>1,xx=>1,Foo=>{x=>"Default x",y=>"Default y",z=>2}}
+##{zz=>nothing,_=>[z=>2],qq=>"Default Special q",ww=>1,xx=>1,Foo=>{x=>"x:Bar->Foo",y=>"Default y",z=>2}}
 
 @KC Bar(y=>2)
 ##in basic Bar
@@ -172,14 +172,53 @@ bar_or_foo = Foo
 ##in basic Foo
 ##{x=>"Default x",y=>"Default y",z=>nothing}
 ```
-##Delayed Evaluation
-Note that this can currently cause unexpected results when one uses free variables.
-It might be wise to fully qualify these.
-This issue only matters for default arguments supplied to `def_generic`.
-And, for the most part, `def_generic` will likely not be supplied with defaults.
-But that remains to be seen.
 
-For more info see the related issue in the Modules Demo.
+##Required Arguments
+
+Arguments with a trailing `!` (but no default), flag an error if
+they are not supplied with a value at runtime.
+
+```julia
+@def_generic Qux(x!,y)
+##:(Qux(x!,y))
+
+@def_method function Qux(x,y)
+   (x,y)
+end
+
+@KC Qux()
+##You must supply a value for x
+## in Qux at /home/chris/.julia/Keyword/src/Keyword.jl:325
+
+@KC Qux(x=>2)
+##(2,nothing)
+
+```
+
+You can override this behavior if you really want to.
+
+```juila
+
+##Note the space between x! and =>.
+##This is required by julia to distinguish it from !=.
+@def_generic Quux(x! =>3,y)
+##:(Quux(x!=>3,y))
+
+@def_method function Quux(x!,y)
+   (x!,y)
+end
+
+@KC Quux()
+##(3,nothing)
+
+@KC Quux(x! =>2)
+##(2,nothing)
+
+```
+
+
+##Delayed Evaluation
+
 
 ```julia
 @def_generic Baz(x=>println("x evaluated at run time."))
@@ -228,52 +267,13 @@ A.f()
 ##(nothing,nothing,nothing)
 
 @KC A.Foo()
-##X not defined
+##in A's X
+##in A's Y
+##in A's W
+##(nothing,nothing,nothing)
 ```
 
-###Example 3
-
-```julia
-
-module B
-using Keyword
-keyword_init(B)
-
-X() = println("in B's X")
-Y() = println("in B's Y")
-W() = println("in B's W")
-
-@def_generic Foo(x=>B.X(), y=>B.Y(), _)
-@def_method function Foo(x, y, w=>B.W(),_)
-    (x,y,w)
-end
-f() = @KC Foo()
-
-keyword_finalize()
-end
-
-B.f()
-##in B's X
-##in B's Y
-##in B's W
-##(nothing,nothing,nothing)
-
-@KC B.Foo()
-##in B's X
-##in B's Y
-##in B's W
-##(nothing,nothing,nothing)
-
-B_foo = B.Foo
-@KC B_foo()
-##in B's X
-##in B's Y
-##in B's W
-##(nothing,nothing,nothing)
-
-```
-
-###Example 3
+###Example 2
 
 ```julia
 module C
@@ -307,15 +307,15 @@ C.f()
 
 ```julia
 macroexpand(:(@KC Foo()))
-##:(if (0x229efd7230f54830$(Keyword).==$(Keyword).object_id(Foo))
-##        Foo("Default x","Default y",missing)
+##:(if (0x1ba1dd69aac48c03$(Keyword).==$(Keyword).object_id(Foo))
+##        Foo("Default x","Default y",Foo($(Keyword).Arg_Num(3)))
 ##    else 
 ##        $(Keyword).warn("slow call. Foo changed.")
-##        $(Keyword).tuple_call($(Keyword).object_id(Foo))
+##        $(Keyword).tuple_call(Foo)
 ##    end)
 
 macroexpand(:(@KC! Foo()))
-##:(Foo("Default x","Default y",missing))
+##:(Foo("Default x","Default y",Foo($(Keyword).Arg_Num(3))))
 
 ```
 
